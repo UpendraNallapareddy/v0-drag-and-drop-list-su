@@ -11,6 +11,7 @@ import {
   type DragStartEvent,
   DragOverlay,
   closestCorners,
+  type DragMoveEvent,
 } from "@dnd-kit/core"
 import {
   arrayMove,
@@ -36,8 +37,21 @@ interface Group {
   isCollapsed?: boolean
 }
 
+interface DropIndicator {
+  groupId: string
+  itemIndex: number | null // null means at the end of the group
+}
+
 // The individual sortable item component
-function SortableItem({ item, groupId }: { item: Item; groupId: string }) {
+function SortableItem({
+  item,
+  groupId,
+  dropIndicator,
+}: {
+  item: Item
+  groupId: string
+  dropIndicator: DropIndicator | null
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.id,
     data: {
@@ -53,22 +67,77 @@ function SortableItem({ item, groupId }: { item: Item; groupId: string }) {
     opacity: isDragging ? 0.5 : 1,
   }
 
+  // Determine if this item has a drop indicator before it
+  const showDropIndicatorBefore =
+    dropIndicator &&
+    dropIndicator.groupId === groupId &&
+    typeof dropIndicator.itemIndex === "number" &&
+    item.id === `item-${dropIndicator.itemIndex + 1}`
+
   return (
-    <div ref={setNodeRef} style={style} className={`pl-6 mb-2 ${isDragging ? "z-10" : ""}`}>
-      <Card className="border shadow-sm">
-        <CardContent className="p-3 flex items-center gap-3">
-          <div {...attributes} {...listeners} className="cursor-grab touch-manipulation">
-            <GripVertical className="h-5 w-5 text-gray-400" />
-          </div>
-          <div className="flex-1">{item.content}</div>
-        </CardContent>
-      </Card>
+    <>
+      {showDropIndicatorBefore && (
+        <div className="h-12 border-2 border-primary border-dashed rounded-md mb-3 bg-primary/5 animate-pulse" />
+      )}
+      <div ref={setNodeRef} style={style} className={`mb-3 ${isDragging ? "z-10" : ""}`}>
+        <Card className="border shadow-sm transition-all duration-200">
+          <CardContent className="p-3 flex items-center gap-3">
+            <div {...attributes} {...listeners} className="cursor-grab touch-manipulation">
+              <GripVertical className="h-5 w-5 text-gray-400" />
+            </div>
+            <div className="flex-1">{item.content}</div>
+          </CardContent>
+        </Card>
+      </div>
+    </>
+  )
+}
+
+// Empty placeholder item for drop targets
+function EmptyItem({
+  groupId,
+  isActive,
+}: {
+  groupId: string
+  isActive: boolean
+}) {
+  const { setNodeRef } = useSortable({
+    id: `empty-${groupId}`,
+    data: {
+      type: "empty",
+      groupId,
+    },
+  })
+
+  return (
+    <div ref={setNodeRef} className="mb-3">
+      <div
+        className={`
+          border border-dashed rounded-md h-12 flex items-center justify-center text-sm
+          transition-all duration-200
+          ${
+            isActive
+              ? "border-primary bg-primary/5 text-primary animate-pulse"
+              : "border-gray-300 bg-gray-50 text-gray-400"
+          }
+        `}
+      >
+        Drop items here
+      </div>
     </div>
   )
 }
 
 // The sortable group component
-function SortableGroup({ group, onToggleCollapse }: { group: Group; onToggleCollapse: (groupId: string) => void }) {
+function SortableGroup({
+  group,
+  onToggleCollapse,
+  dropIndicator,
+}: {
+  group: Group
+  onToggleCollapse: (groupId: string) => void
+  dropIndicator: DropIndicator | null
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: group.id,
     data: {
@@ -83,8 +152,14 @@ function SortableGroup({ group, onToggleCollapse }: { group: Group; onToggleColl
     opacity: isDragging ? 0.5 : 1,
   }
 
+  // Create a list of all sortable IDs including items and the empty placeholder
+  const sortableIds = [...group.items.map((item) => item.id), `empty-${group.id}`]
+
+  // Check if the empty item should be highlighted
+  const isEmptyActive = dropIndicator?.groupId === group.id && dropIndicator?.itemIndex === null
+
   return (
-    <div ref={setNodeRef} style={style} className={`mb-4 ${isDragging ? "z-10" : ""}`}>
+    <div ref={setNodeRef} style={style} className={`mb-6 ${isDragging ? "z-10" : ""}`}>
       <Card className={`border ${isDragging ? "shadow-lg ring-2 ring-primary/20" : "shadow-sm"}`}>
         <CardHeader className="p-4 pb-2" {...attributes} {...listeners}>
           <div className="flex items-center cursor-grab">
@@ -108,12 +183,21 @@ function SortableGroup({ group, onToggleCollapse }: { group: Group; onToggleColl
           </div>
         </CardHeader>
         {!group.isCollapsed && (
-          <CardContent className="p-4 pt-0">
-            <SortableContext items={group.items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
-              {group.items.map((item) => (
-                <SortableItem key={item.id} item={item} groupId={group.id} />
-              ))}
-            </SortableContext>
+          <CardContent className="p-4 pt-2">
+            <div className="space-y-2">
+              <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+                {group.items.length === 0 ? (
+                  <EmptyItem groupId={group.id} isActive={isEmptyActive} />
+                ) : (
+                  <>
+                    {group.items.map((item) => (
+                      <SortableItem key={item.id} item={item} groupId={group.id} dropIndicator={dropIndicator} />
+                    ))}
+                    <EmptyItem groupId={group.id} isActive={isEmptyActive} />
+                  </>
+                )}
+              </SortableContext>
+            </div>
           </CardContent>
         )}
       </Card>
@@ -145,6 +229,12 @@ function GroupOverlay({ group }: { group: Group }) {
       </CardHeader>
     </Card>
   )
+}
+
+// Extract item ID number from string (e.g., "item-3" -> 3)
+function getItemNumber(itemId: string): number | null {
+  const match = itemId.match(/item-(\d+)/)
+  return match ? Number.parseInt(match[1], 10) : null
 }
 
 export default function SortableNestedList() {
@@ -179,6 +269,7 @@ export default function SortableNestedList() {
 
   const [activeId, setActiveId] = useState<string | null>(null)
   const [activeData, setActiveData] = useState<any>(null)
+  const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null)
 
   // Configure the sensors
   const sensors = useSensors(
@@ -206,23 +297,65 @@ export default function SortableNestedList() {
     setActiveData(active.data.current)
   }
 
-  // Find the group that contains an item
-  function findGroupOfItem(itemId: string) {
-    return groups.find((group) => group.items.some((item) => item.id === itemId))
+  // Handle drag move to update drop indicator
+  function handleDragMove(event: DragMoveEvent) {
+    const { active, over } = event
+
+    if (!over || active.data.current?.type !== "item") {
+      setDropIndicator(null)
+      return
+    }
+
+    const overType = over.data.current?.type
+    const overGroupId = overType === "group" ? (over.id as string) : (over.data.current?.groupId as string)
+
+    // If dropping on an empty placeholder
+    if (overType === "empty") {
+      setDropIndicator({
+        groupId: overGroupId,
+        itemIndex: null, // End of the group
+      })
+      return
+    }
+
+    // If dropping on a group header
+    if (overType === "group") {
+      // Show indicator at the beginning of the group
+      setDropIndicator({
+        groupId: over.id as string,
+        itemIndex: 0,
+      })
+      return
+    }
+
+    // If dropping on another item
+    if (overType === "item") {
+      const overId = over.id as string
+      const overItemNumber = getItemNumber(overId)
+
+      if (overItemNumber !== null) {
+        setDropIndicator({
+          groupId: overGroupId,
+          itemIndex: overItemNumber - 1,
+        })
+      }
+    }
   }
 
-  // Handle drag end
+  // Clear drop indicator when drag ends
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
 
     if (!over) {
       setActiveId(null)
       setActiveData(null)
+      setDropIndicator(null)
       return
     }
 
     const activeType = active.data.current?.type
     const overType = over.data.current?.type
+    const overId = over.id as string
 
     // If we're dragging a group
     if (activeType === "group" && active.id !== over.id) {
@@ -242,11 +375,30 @@ export default function SortableNestedList() {
     // If we're dragging an item
     else if (activeType === "item") {
       const activeGroup = active.data.current.groupId
-      const overIsGroup = overType === "group"
-      const overGroup = overIsGroup ? over.id : over.data.current?.groupId
 
-      // If we're dropping onto a group directly (not an item)
-      if (overIsGroup) {
+      // Handle dropping on empty placeholder
+      if (overType === "empty") {
+        const targetGroupId = over.data.current.groupId
+
+        setGroups((groups) => {
+          const updatedGroups = [...groups]
+
+          // Remove item from source group
+          const sourceGroupIndex = updatedGroups.findIndex((g) => g.id === activeGroup)
+          const itemIndex = updatedGroups[sourceGroupIndex].items.findIndex((i) => i.id === active.id)
+          const [movedItem] = updatedGroups[sourceGroupIndex].items.splice(itemIndex, 1)
+
+          // Add item to the end of target group
+          const targetGroupIndex = updatedGroups.findIndex((g) => g.id === targetGroupId)
+          updatedGroups[targetGroupIndex].items.push(movedItem)
+
+          return updatedGroups
+        })
+      }
+      // If we're dropping onto a group directly
+      else if (overType === "group") {
+        const overGroup = over.id as string
+
         // Move the item to the end of the target group
         setGroups((groups) => {
           const updatedGroups = [...groups]
@@ -264,7 +416,9 @@ export default function SortableNestedList() {
         })
       }
       // If we're dropping onto another item
-      else if (active.id !== over.id) {
+      else if (overType === "item" && active.id !== over.id) {
+        const overGroup = over.data.current.groupId
+
         setGroups((groups) => {
           const updatedGroups = [...groups]
 
@@ -295,12 +449,18 @@ export default function SortableNestedList() {
 
     setActiveId(null)
     setActiveData(null)
+    setDropIndicator(null)
   }
 
   // Find the active item or group for the drag overlay
   const activeGroup = activeData?.type === "group" ? groups.find((g) => g.id === activeId) : null
   const activeItem =
     activeData?.type === "item" ? findGroupOfItem(activeId as string)?.items.find((i) => i.id === activeId) : null
+
+  // Find the group that contains an item
+  function findGroupOfItem(itemId: string) {
+    return groups.find((group) => group.items.some((item) => item.id === itemId))
+  }
 
   return (
     <div className="w-full max-w-3xl mx-auto p-4">
@@ -322,11 +482,17 @@ export default function SortableNestedList() {
         sensors={sensors}
         collisionDetection={closestCorners}
         onDragStart={handleDragStart}
+        onDragMove={handleDragMove}
         onDragEnd={handleDragEnd}
       >
         <SortableContext items={groups.map((group) => group.id)} strategy={verticalListSortingStrategy}>
           {groups.map((group) => (
-            <SortableGroup key={group.id} group={group} onToggleCollapse={handleToggleCollapse} />
+            <SortableGroup
+              key={group.id}
+              group={group}
+              onToggleCollapse={handleToggleCollapse}
+              dropIndicator={dropIndicator}
+            />
           ))}
         </SortableContext>
 
