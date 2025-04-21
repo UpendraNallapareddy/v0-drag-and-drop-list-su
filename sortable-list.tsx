@@ -21,7 +21,7 @@ import {
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { GripVertical, ChevronDown, ChevronRight } from "lucide-react"
+import { GripVertical, ChevronDown, ChevronRight, Github } from "lucide-react"
 
 // Types for our data structure
 interface Item {
@@ -304,6 +304,17 @@ export default function SortableNestedList() {
 
   return (
     <div className="w-full max-w-3xl mx-auto p-4">
+      <div className="flex justify-center mb-4">
+        <a
+          href="https://github.com/UpendraNallapareddy/v0-drag-and-drop-list-su"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-full transition-colors"
+        >
+          <Github className="h-4 w-4" />
+          View on GitHub
+        </a>
+      </div>
       <h2 className="text-2xl font-bold mb-2 text-center">Sortable Groups & Items</h2>
       <p className="text-gray-500 mb-6 text-center">Drag groups to reorder them or drag items between groups</p>
 
